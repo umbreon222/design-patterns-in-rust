@@ -26,6 +26,7 @@ pub mod mediator {
     }
 }
 
+use std::any::{ TypeId, Any };
 use std::collections::HashMap;
 use std::rc::Rc;
 use core::cell::RefCell;
@@ -185,27 +186,48 @@ impl LightActionHandler {
 }
 
 pub struct LightMediator {
-    light_action_handlers: Vec<LightActionHandler>
+    handlers: HashMap<TypeId, (TypeId, Vec<Box<dyn Any>>)>
 }
 
 impl Mediator<LightActionHandler, LightAction, ()> for LightMediator {
-    fn mediate(&mut self, handler: LightActionHandler) {
-        self.light_action_handlers.push(handler);
-    }
-
-    fn broadcast(&mut self, light_action: LightAction) -> Result<(), ()> {
-        for handler in &mut self.light_action_handlers {
-            handler.handle_light_action(&light_action)
+      fn mediate(&mut self, handler: LightActionHandler) {
+        let handler_argument_type = TypeId::of::<LightAction>();
+        let handler_map_value: &mut (TypeId, Vec<Box<dyn Any>>);
+        match self.handlers.get_mut(&handler_argument_type) {
+          Some(temp_handler_map_value) => {
+            handler_map_value = temp_handler_map_value;
+          },
+          None => {
+            self.handlers.insert(handler_argument_type.clone(), (TypeId::of::<LightActionHandler>(), vec![]));
+            handler_map_value = self.handlers.get_mut(&handler_argument_type).unwrap();
+          }
         }
-
+        handler_map_value.1.push(Box::new(handler));
+      }
+    
+      fn broadcast(&mut self, light_action: LightAction) -> Result<(), ()> {
+        let handler_map_value = self.handlers.get_mut(&TypeId::of::<LightAction>());
+        if handler_map_value.is_none() {
+          return Err(());
+        }
+        
+        for handler in &mut handler_map_value.unwrap().1 {
+          match handler.downcast_mut::<LightActionHandler>() {
+            Some(light_action_handler) => {
+              light_action_handler.handle_light_action(&light_action)
+            },
+            None => {}
+          }
+        }
+    
         Ok(())
-    }
+      }
 }
 
 impl LightMediator {
     pub fn new() -> Self {
         Self {
-            light_action_handlers: vec![]
+            handlers: HashMap::new()
         }
     }
 }
