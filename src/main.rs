@@ -118,12 +118,12 @@ pub struct LightStateObserver {
 
 impl Observer<bool> for LightStateObserver {
     fn on_subject_updated(&mut self, update_source: &bool) {
+        self.update_count += 1;
         let mut light_state = "off";
         if *update_source {
             light_state = "on"
         }
-        println!("Light was switched {}", light_state);
-        self.update_count += 1;
+        println!("Light was switched {} and has been switched a total of {} time(s)", light_state, self.update_count);
     }
 }
 /* </observer pattern example> */
