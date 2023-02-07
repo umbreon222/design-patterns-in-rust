@@ -40,6 +40,14 @@ pub struct Light {
 }
 
 impl Light {
+    pub fn new(name: String, initial_state: bool) -> Self {
+        Self {
+            name,
+            state: initial_state,
+            observer_map: HashMap::new()
+        }
+    }
+
     pub fn on(&mut self) {
         self.state = true;
         self.notify_observers();
@@ -204,7 +212,7 @@ impl LightMediator {
 /* </mediator pattern example> */
 
 fn main() {
-    let mut light = Light { name: "light_1".to_string(), state: false, observer_map: HashMap::new() };
+    let mut light = Light::new("light_1".to_string(), false);
     let light_name = light.name.clone();
     let light_observer_key = "light_observer_1".to_string(); 
     light.attach_observer(&light_observer_key, Box::new(LightStateObserver { update_count: 0 }));
