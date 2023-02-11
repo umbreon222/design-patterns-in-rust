@@ -148,6 +148,48 @@ pub struct LightAction {
     light_name: String
 }
 
+pub trait Handler {
+    fn handle_event(&mut self, event: &Box<dyn Any>);
+    fn handles_type(&self) -> TypeId;
+}
+
+pub struct ConcreteMediator {
+    handlers: HashMap<TypeId, Vec<Box<dyn Handler>>>
+}
+
+impl ConcreteMediator {
+    fn new() -> Self {
+        Self {
+            handlers: HashMap::new()
+        }
+    }
+
+    fn mediate(&mut self, handler: Box<dyn Handler>) {
+        let handler_map_value: &mut Vec<Box<dyn Handler>>;
+        match self.handlers.get_mut(&handler.handles_type()) {
+          Some(temp_handler_map_value) => {
+            handler_map_value = temp_handler_map_value;
+          },
+          None => {
+            self.handlers.insert(handler.handles_type(), vec![]);
+            handler_map_value = self.handlers.get_mut(&handler.handles_type()).unwrap();
+          }
+        }
+        handler_map_value.push(handler);
+    }
+
+    fn broadcast(&mut self, event_type: TypeId, event: Box<dyn Any>) {
+        match self.handlers.get_mut(&event_type) {
+            Some(handlers) => {
+                for handler in handlers {
+                    handler.handle_event(&event);
+                }
+            },
+            None => {}
+        }
+    }
+}
+
 pub struct LightActionHandler {
     light_map: HashMap<String, Rc<RefCell<Light>>>
 }
@@ -162,73 +204,37 @@ impl LightActionHandler {
     fn add_light(&mut self, light: Light) {
         self.light_map.insert(light.name.clone(), Rc::new(RefCell::new(light)));
     }
+}
 
-    fn handle_light_action(&mut self, light_action: &LightAction) {
-        // This would normally just call into a service but I'm doing it here so I can both not write a
-        // whole service and also use the command pattern from earlier
-        match self.light_map.get(&light_action.light_name) {
-            Some(light) => {
-                let mut remote: Remote;
-                match light_action.action_type {
-                    LightActionType::On => {
-                        remote = Remote { command: Box::new(LightOnCommand { light: light.clone() }) };
-
+impl Handler for LightActionHandler {
+    fn handle_event(&mut self, event: &Box<dyn Any>) {
+        match event.downcast_ref::<LightAction>() {
+            Some(light_action) => {
+                // This would normally just call into a service but I'm doing it here so I can both not write a
+                // whole service and also use the command pattern from earlier
+                match self.light_map.get(&light_action.light_name) {
+                    Some(light) => {
+                        let mut remote: Remote;
+                        match light_action.action_type {
+                            LightActionType::On => {
+                                remote = Remote { command: Box::new(LightOnCommand { light: light.clone() }) };
+        
+                            },
+                            LightActionType::Off => {
+                                remote = Remote { command: Box::new(LightOffCommand { light: light.clone() }) };
+                            }
+                        }
+                        remote.execute();
                     },
-                    LightActionType::Off => {
-                        remote = Remote { command: Box::new(LightOffCommand { light: light.clone() }) };
-                    }
+                    None => {}
                 }
-                remote.execute();
             },
             None => {}
         }
     }
-}
 
-pub struct LightMediator {
-    handlers: HashMap<TypeId, (TypeId, Vec<Box<dyn Any>>)>
-}
-
-impl Mediator<LightActionHandler, LightAction, ()> for LightMediator {
-      fn mediate(&mut self, handler: LightActionHandler) {
-        let handler_argument_type = TypeId::of::<LightAction>();
-        let handler_map_value: &mut (TypeId, Vec<Box<dyn Any>>);
-        match self.handlers.get_mut(&handler_argument_type) {
-          Some(temp_handler_map_value) => {
-            handler_map_value = temp_handler_map_value;
-          },
-          None => {
-            self.handlers.insert(handler_argument_type.clone(), (TypeId::of::<LightActionHandler>(), vec![]));
-            handler_map_value = self.handlers.get_mut(&handler_argument_type).unwrap();
-          }
-        }
-        handler_map_value.1.push(Box::new(handler));
-      }
-    
-      fn broadcast(&mut self, light_action: LightAction) -> Result<(), ()> {
-        let handler_map_value = self.handlers.get_mut(&TypeId::of::<LightAction>());
-        if handler_map_value.is_none() {
-          return Err(());
-        }
-        
-        for handler in &mut handler_map_value.unwrap().1 {
-          match handler.downcast_mut::<LightActionHandler>() {
-            Some(light_action_handler) => {
-              light_action_handler.handle_light_action(&light_action)
-            },
-            None => {}
-          }
-        }
-    
-        Ok(())
-      }
-}
-
-impl LightMediator {
-    pub fn new() -> Self {
-        Self {
-            handlers: HashMap::new()
-        }
+    fn handles_type(&self) -> TypeId {
+        TypeId::of::<LightAction>()
     }
 }
 /* </mediator pattern example> */
@@ -240,16 +246,16 @@ fn main() {
     light.attach_observer(&light_observer_key, Box::new(LightStateObserver { update_count: 0 }));
     let mut light_action_handler = LightActionHandler::new();
     light_action_handler.add_light(light);
-    let mut light_mediator = LightMediator::new();
-    light_mediator.mediate(light_action_handler);
+    let mut light_mediator = ConcreteMediator::new();
+    light_mediator.mediate(Box::new(light_action_handler));
     let turn_on_light_1_action = LightAction {
         light_name: light_name.clone(),
         action_type: LightActionType::On
     };
-    light_mediator.broadcast(turn_on_light_1_action).expect("Couldn't turn on light 1");
+    light_mediator.broadcast(TypeId::of::<LightAction>(), Box::new(turn_on_light_1_action));
     let turn_off_light_1_action = LightAction {
         light_name: light_name.clone(),
         action_type: LightActionType::Off
     };
-    light_mediator.broadcast(turn_off_light_1_action).expect("Couldn't turn off light 1");
+    light_mediator.broadcast(TypeId::of::<LightAction>(), Box::new(turn_off_light_1_action));
 }
