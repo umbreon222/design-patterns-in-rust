@@ -19,10 +19,56 @@ pub mod observer {
 }
 
 pub mod mediator {
+    use std::{any::{TypeId, Any}, collections::HashMap};
+
     // https://www.dofactory.com/net/mediator-design-pattern
-    pub trait Mediator<THandler, TEvent, TResponse> {
-        fn mediate(&mut self, handler: THandler);
-        fn broadcast(&mut self, event: TEvent) -> Result<TResponse, ()>;
+    pub trait Mediator {
+        fn mediate(&mut self, handler: Box<dyn Handler>);
+        fn broadcast(&mut self, event_type: TypeId, event: Box<dyn Any>);
+    }
+
+    pub trait Handler {
+        fn handle_event(&mut self, event: &Box<dyn Any>);
+        fn handles_type(&self) -> TypeId;
+    }
+
+    pub struct ConcreteMediator {
+        handlers: HashMap<TypeId, Vec<Box<dyn Handler>>>
+    }
+    
+    impl ConcreteMediator {
+        pub fn new() -> Self {
+            Self {
+                handlers: HashMap::new()
+            }
+        }
+    }
+    
+    impl Mediator for ConcreteMediator {
+        fn mediate(&mut self, handler: Box<dyn Handler>) {
+            let handler_map_value: &mut Vec<Box<dyn Handler>>;
+            match self.handlers.get_mut(&handler.handles_type()) {
+              Some(temp_handler_map_value) => {
+                handler_map_value = temp_handler_map_value;
+              },
+              None => {
+                self.handlers.insert(handler.handles_type(), vec![]);
+                handler_map_value = self.handlers.get_mut(&handler.handles_type()).unwrap();
+              }
+            }
+            handler_map_value.push(handler);
+        }
+    
+        fn broadcast(&mut self, event_type: TypeId, event: Box<dyn Any>) {
+            match self.handlers.get_mut(&event_type) {
+                Some(handlers) => {
+                    for handler in handlers {
+                        handler.handle_event(&event);
+                    }
+                },
+                None => {}
+            }
+        }
     }
 }
 
@@ -32,7 +78,7 @@ use std::rc::Rc;
 use core::cell::RefCell;
 use command::Command;
 use observer::{ Observer, Subject };
-use mediator::Mediator;
+use mediator::{ Mediator, Handler, ConcreteMediator };
 
 pub struct Light {
     name: String,
@@ -146,48 +192,6 @@ pub enum LightActionType {
 pub struct LightAction {
     action_type: LightActionType,
     light_name: String
-}
-
-pub trait Handler {
-    fn handle_event(&mut self, event: &Box<dyn Any>);
-    fn handles_type(&self) -> TypeId;
-}
-
-pub struct ConcreteMediator {
-    handlers: HashMap<TypeId, Vec<Box<dyn Handler>>>
-}
-
-impl ConcreteMediator {
-    fn new() -> Self {
-        Self {
-            handlers: HashMap::new()
-        }
-    }
-
-    fn mediate(&mut self, handler: Box<dyn Handler>) {
-        let handler_map_value: &mut Vec<Box<dyn Handler>>;
-        match self.handlers.get_mut(&handler.handles_type()) {
-          Some(temp_handler_map_value) => {
-            handler_map_value = temp_handler_map_value;
-          },
-          None => {
-            self.handlers.insert(handler.handles_type(), vec![]);
-            handler_map_value = self.handlers.get_mut(&handler.handles_type()).unwrap();
-          }
-        }
-        handler_map_value.push(handler);
-    }
-
-    fn broadcast(&mut self, event_type: TypeId, event: Box<dyn Any>) {
-        match self.handlers.get_mut(&event_type) {
-            Some(handlers) => {
-                for handler in handlers {
-                    handler.handle_event(&event);
-                }
-            },
-            None => {}
-        }
-    }
 }
 
 pub struct LightActionHandler {
